@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard - POS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>POS System</h2>
+    <a href="dashboard.html" class="active">Dashboard</a>
+    <a href="products.html">Products</a>
+    <a href="billing.html">Billing</a>
+    <a href="sales.html">Sales</a>
+    <a href="reports.html">Reports</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <div class="row"><span class="badge">Store</span><strong>Vithu Mart</strong></div>
+      <div class="row"><button id="seedBtn" class="btn ghost">Seed Demo</button><span class="badge" id="invStats">0 items</span></div>
+    </div>
+
+    <div class="content">
+      <!-- KPIs -->
+      <section class="grid kpis">
+        <div class="card"><h3>Today Sales (LKR)</h3><div class="kv" id="kpiSales">0.00</div><div class="note" id="kpiOrders">0 orders</div></div>
+        <div class="card"><h3>This Week</h3><div class="kv" id="kpiWeek">0.00</div><div class="note">Mon–Sun</div></div>
+        <div class="card"><h3>Stock Value</h3><div class="kv" id="kpiStock">0.00</div><div class="note" id="kpiItems">0 products</div></div>
+        <div class="card"><h3>Low Stock (&lt;=5)</h3><div class="kv" id="kpiLow">0</div><div class="note">Restock soon</div></div>
+      </section>
+
+      <div class="split" style="margin-top:14px">
+        <!-- Left: charts -->
+        <section class="card chart">
+          <h3 style="margin:0 0 10px">Sales — Last 7 Days</h3>
+          <canvas id="bar7" width="900" height="280"></canvas>
+        </section>
+
+        <!-- Right: quick actions & top items -->
+        <section class="card">
+          <h3 style="margin:0 0 10px">Quick Actions</h3>
+          <div class="quick-grid" style="margin-bottom:12px">
+            <a class="quick btn" href="billing.html">New Sale</a>
+            <a class="quick btn green" href="products.html">Add Product</a>
+            <button class="quick btn amber" id="exportBtn">Export Data</button>
+            <label class="quick btn ghost" style="cursor:pointer">Import Data <input id="importFile" type="file" accept="application/json" style="display:none"></label>
+          </div>
+          <h3 style="margin:4px 0 8px">Top Selling (today)</h3>
+          <table class="table" id="topTable"><thead><tr><th>Item</th><th>Qty</th><th class="right">Amount</th></tr></thead><tbody></tbody></table>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Minimal shared helpers (inline for this page) ---
+    const K={PRODS:'pos_products',SALES:'pos_sales',SEQ:'pos_seq'};
+    const DB={get:(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+    const money=n=>(n||0).toFixed(2);
+    const products=()=>DB.get(K.PRODS,[]);
+    const sales=()=>DB.get(K.SALES,[]);
+    function seed(){
+      const sample=[
+        { barcode:'4791234000012', name:'Milk 1L', price:380, stock:50, cat:'Dairy' },
+        { barcode:'4791234000029', name:'Bread Loaf', price:260, stock:40, cat:'Bakery' },
+        { barcode:'4791234000036', name:'Eggs (6)', price:420, stock:30, cat:'Dairy' },
+        { barcode:'4791234000043', name:'Rice 5kg', price:1450, stock:20, cat:'Grains' },
+        { barcode:'4791234000050', name:'Sugar 1kg', price:290, stock:35, cat:'Grocery' },
+        { barcode:'4791234000067', name:'Tea 200g', price:560, stock:25, cat:'Beverage' }
+      ];
+      const curr=products();
+      const m=new Map(curr.map(p=>[String(p.barcode),p]));
+      for(const p of sample) m.set(String(p.barcode),{...(m.get(String(p.barcode))||{}),...p});
+      DB.set(K.PRODS,Array.from(m.values()));
+      refresh();
+    }
+
+    // --- KPIs computation ---
+    function computeKPIs(){
+      const prods=products();
+      const ss=sales();
+      const today=new Date().toISOString().slice(0,10);
+      const daySales=ss.filter(s=>s.id?.includes(today));
+      const todayTotal=daySales.reduce((a,s)=>a+s.total,0);
+      const weekStart=new Date();
+      weekStart.setDate(weekStart.getDate()-6); // last 7 days
+      const weekKey=ss.filter(s=>new Date(s.at).getTime()>=weekStart.setHours(0,0,0,0));
+      const weekTotal=weekKey.reduce((a,s)=>a+s.total,0);
+      const stockValue=prods.reduce((a,p)=>a+p.price*p.stock,0);
+      const low=prods.filter(p=>p.stock<=5).length;
+      return { todayTotal, orders:daySales.length, weekTotal, stockValue, items:prods.length, low };
+    }
+
+    // --- Simple charts (Canvas API) ---
+    function drawBar(canvasId, labels, values){
+      const c=document.getElementById(canvasId); const ctx=c.getContext('2d');
+      ctx.clearRect(0,0,c.width,c.height);
+      const pad=40, w=c.width-pad*2, h=c.height-pad*2; 
+      const max=Math.max(1, ...values);
+      const bw=w/values.length*0.7; const gap=w/values.length*0.3;
+      // axes
+      ctx.strokeStyle='#334155'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad,pad); ctx.lineTo(pad,pad+h); ctx.lineTo(pad+w,pad+h); ctx.stroke();
+      // bars
+      for(let i=0;i<values.length;i++){
+        const x=pad + i*(bw+gap) + gap/2;
+        const y=pad+h - (values[i]/max)*h;
+        const bh=(values[i]/max)*h;
+        ctx.fillStyle='#3b82f6'; ctx.fillRect(x,y,bw,bh);
+        ctx.fillStyle='#9ca3af'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+        ctx.fillText(labels[i], x+bw/2, pad+h+14);
+      }
+      // y labels
+      ctx.fillStyle='#9ca3af'; ctx.textAlign='right';
+      for(let t=0;t<=4;t++){ const v=max*t/4; const y=pad+h - (v/max)*h; ctx.fillText(v.toFixed(0), pad-6, y+4); ctx.strokeStyle='#1f2937'; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(pad+w,y); ctx.stroke(); }
+    }
+
+    function last7Days(){
+      const days=[]; const labels=[]; for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); const k=d.toISOString().slice(0,10); days.push(k); labels.push(d.toLocaleDateString(undefined,{weekday:'short'})); }
+      const map=new Map(days.map(k=>[k,0]));
+      for(const s of sales()){ const k=(s.id||'').slice(2,12); if(map.has(k)) map.set(k, map.get(k)+s.total); }
+      return { labels, values:Array.from(map.values()) };
+    }
+
+    // --- Export/Import ---
+    function exportData(){ const data={ products:products(), sales:sales() }; const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`pos-backup-${new Date().toISOString().slice(0,10)}.json`; a.click(); }
+    function importData(file){ const r=new FileReader(); r.onload=()=>{ try{ const d=JSON.parse(r.result); if(Array.isArray(d.products)) DB.set(K.PRODS,d.products); if(Array.isArray(d.sales)) DB.set(K.SALES,d.sales); refresh(); alert('Import done'); }catch{ alert('Invalid file') } }; r.readAsText(file); }
+
+    // --- Top selling table (today) ---
+    function fillTop(){
+      const tbody=document.querySelector('#topTable tbody'); tbody.innerHTML='';
+      const today=new Date().toISOString().slice(0,10);
+      const map=new Map();
+      for(const s of sales()) if((s.id||'').includes(today)) for(const it of (s.items||[])){
+        const k=it.barcode; const prev=map.get(k)||{name:it.name, qty:0, amt:0};
+        prev.qty+=it.qty; prev.amt+=it.price*it.qty; map.set(k,prev);
+      }
+      const rows=Array.from(map.values()).sort((a,b)=>b.qty-a.qty).slice(0,5);
+      for(const r of rows){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.name}</td><td>${r.qty}</td><td style="text-align:right">${money(r.amt)}</td>`; tbody.appendChild(tr); }
+      if(!rows.length){ const tr=document.createElement('tr'); tr.innerHTML='<td colspan="3" class="note">No sales today</td>'; tbody.appendChild(tr); }
+    }
+
+    function refresh(){
+      const k=computeKPIs();
+      document.getElementById('kpiSales').textContent=money(k.todayTotal);
+      document.getElementById('kpiOrders').textContent=`${k.orders} orders`;
+      document.getElementById('kpiWeek').textContent=money(k.weekTotal);
+      document.getElementById('kpiStock').textContent=money(k.stockValue);
+      document.getElementById('kpiItems').textContent=`${k.items} products`;
+      document.getElementById('kpiLow').textContent=k.low;
+      document.getElementById('invStats').textContent=`${k.items} items`;
+      const {labels,values}=last7Days(); drawBar('bar7', labels, values);
+      fillTop();
+    }
+
+    document.getElementById('seedBtn').addEventListener('click', seed);
+    document.getElementById('exportBtn')?.addEventListener('click', exportData);
+    document.getElementById('importFile')?.addEventListener('change', e=> e.target.files[0] && importData(e.target.files[0]));
+
+    refresh();
+  </script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Billing - POS</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .layout { display:grid; grid-template-columns:2fr 1fr; gap:16px; height:100%; }
+    .products { overflow:auto; }
+    .product-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; }
+    .prod { background:#0b1020; border:1px solid var(--border); border-radius:12px; padding:8px; cursor:pointer; }
+    .prod h4 { margin:6px 0 0; font-size:14px; }
+    .prod span { font-size:12px; color:var(--dim); }
+    .cart { display:flex; flex-direction:column; height:100%; }
+    .cart-items { flex:1; overflow:auto; border-bottom:1px solid var(--border); }
+    .cart-items table{width:100%; border-collapse:collapse; font-size:14px;}
+    .cart-items th,.cart-items td{padding:6px;border-bottom:1px solid var(--border);}
+    .totals { padding:12px; }
+    .totals div { display:flex; justify-content:space-between; margin:4px 0; }
+    .checkout { padding:12px; display:flex; gap:8px; }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>POS System</h2>
+    <a href="index.html">Dashboard</a>
+    <a href="products.html">Products</a>
+    <a href="billing.html" class="active">Billing</a>
+    <a href="sales.html">Sales</a>
+    <a href="reports.html">Reports</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <div><strong>Billing</strong></div>
+      <div><input id="barcodeInput" placeholder="Scan / Enter barcode" style="padding:6px;border-radius:6px;border:1px solid var(--border)" /></div>
+    </div>
+    <div class="content layout">
+      <section class="products">
+        <div class="product-grid" id="productGrid"></div>
+      </section>
+      <section class="cart card">
+        <div class="cart-items">
+          <table id="cartTable"><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th><th></th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="totals">
+          <div><span>Subtotal</span><span id="subTotal">0.00</span></div>
+          <div><span>Tax (5%)</span><span id="tax">0.00</span></div>
+          <div><strong>Grand Total</strong><strong id="grand">0.00</strong></div>
+        </div>
+        <div class="checkout">
+          <button class="btn green" id="checkoutBtn">Checkout</button>
+          <button class="btn ghost" id="printBtn">Print</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+<script>
+  const K={PRODS:'pos_products',SALES:'pos_sales',SEQ:'pos_seq'};
+  const DB={get:(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+  const products=()=>DB.get(K.PRODS,[]);
+  const sales=()=>DB.get(K.SALES,[]);
+  const saveSales=(s)=>DB.set(K.SALES,s);
+  const nextSeq=()=>{let n=(DB.get(K.SEQ,1000)||1000)+1;DB.set(K.SEQ,n);return n};
+  const money=n=>(n||0).toFixed(2);
+
+  let cart=[];
+  function renderProducts(){
+    const grid=document.getElementById('productGrid');
+    grid.innerHTML='';
+    for(const p of products()){
+      const div=document.createElement('div');
+      div.className='prod';
+      div.innerHTML=`<h4>${p.name}</h4><span>${money(p.price)}</span>`;
+      div.onclick=()=>addToCart(p.barcode);
+      grid.appendChild(div);
+    }
+  }
+
+  function addToCart(barcode){
+    const p=products().find(x=>String(x.barcode)===String(barcode));
+    if(!p) return alert('Not found');
+    let item=cart.find(x=>x.barcode===barcode);
+    if(item){item.qty++;} else {cart.push({barcode:p.barcode,name:p.name,price:p.price,qty:1});}
+    renderCart();
+  }
+
+  function renderCart(){
+    const tbody=document.querySelector('#cartTable tbody');
+    tbody.innerHTML='';
+    let sub=0;
+    for(const it of cart){
+      const tr=document.createElement('tr');
+      const t=it.price*it.qty; sub+=t;
+      tr.innerHTML=`<td>${it.name}</td><td><input type='number' min='1' value='${it.qty}' style='width:50px' onchange='updateQty("${it.barcode}",this.value)'/></td><td>${money(it.price)}</td><td>${money(t)}</td><td><button onclick='removeItem("${it.barcode}")'>x</button></td>`;
+      tbody.appendChild(tr);
+    }
+    const tax=sub*0.05; const grand=sub+tax;
+    document.getElementById('subTotal').textContent=money(sub);
+    document.getElementById('tax').textContent=money(tax);
+    document.getElementById('grand').textContent=money(grand);
+  }
+
+  function updateQty(barcode,val){
+    let it=cart.find(x=>x.barcode===barcode);
+    if(it){it.qty=parseInt(val)||1;}
+    renderCart();
+  }
+  function removeItem(barcode){ cart=cart.filter(x=>x.barcode!==barcode); renderCart(); }
+
+  function checkout(){
+    if(!cart.length) return alert('Cart empty');
+    const sub=cart.reduce((a,it)=>a+it.price*it.qty,0);
+    const tax=sub*0.05; const grand=sub+tax;
+    const order={ id:`S${new Date().toISOString()}-${nextSeq()}`, at:new Date().toISOString(), items:cart, total:grand };
+    const all=sales(); all.push(order); saveSales(all);
+    alert('Sale completed');
+    cart=[]; renderCart();
+  }
+
+  document.getElementById('barcodeInput').addEventListener('keypress',e=>{ if(e.key==='Enter'){ addToCart(e.target.value.trim()); e.target.value=''; }});
+  document.getElementById('checkoutBtn').onclick=checkout;
+  document.getElementById('printBtn').onclick=()=>window.print();
+
+  renderProducts();
+  renderCart();
+</script>
+</body>
+</html>

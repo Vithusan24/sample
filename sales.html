@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales - POS</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    table {width:100%; border-collapse:collapse; margin-top:16px;}
+    th,td{border:1px solid var(--border); padding:8px; font-size:14px;}
+    .actions button{margin-right:4px;}
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>POS System</h2>
+    <a href="index.html">Dashboard</a>
+    <a href="products.html">Products</a>
+    <a href="billing.html">Billing</a>
+    <a href="sales.html" class="active">Sales</a>
+    <a href="reports.html">Reports</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <div><strong>Sales</strong></div>
+    </div>
+    <div class="content">
+      <h1>Completed Sales</h1>
+      <table>
+        <thead><tr><th>ID</th><th>Date</th><th>Items</th><th>Total</th><th>Actions</th></tr></thead>
+        <tbody id="salesTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+  const K={SALES:'pos_sales'};
+  const DB={get:(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}}};
+  const sales=()=>DB.get(K.SALES,[]);
+
+  function render(){
+    const tb=document.getElementById('salesTable');
+    tb.innerHTML='';
+    for(const s of sales()){
+      const tr=document.createElement('tr');
+      const items=s.items.map(it=>`${it.name} x${it.qty}`).join(', ');
+      tr.innerHTML=`<td>${s.id}</td><td>${new Date(s.at).toLocaleString()}</td><td>${items}</td><td>${s.total.toFixed(2)}</td><td class='actions'><button onclick='viewSale("${s.id}")'>View</button></td>`;
+      tb.appendChild(tr);
+    }
+  }
+
+  function viewSale(id){
+    const s=sales().find(x=>x.id===id);
+    if(!s) return;
+    let txt=`Sale ID: ${s.id}\nDate: ${new Date(s.at).toLocaleString()}\n`; 
+    for(const it of s.items){txt+=`- ${it.name} x${it.qty} = ${(it.price*it.qty).toFixed(2)}\n`;}
+    txt+=`Total: ${s.total.toFixed(2)}`;
+    alert(txt);
+  }
+
+  render();
+</script>
+</body>
+</html>

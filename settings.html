@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings - POS</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .section {margin:20px 0; padding:16px; border:1px solid var(--border); border-radius:8px; background:#fff;}
+    label {display:block; margin:8px 0 4px;}
+    input {padding:6px; width:250px;}
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>POS System</h2>
+    <a href="index.html">Dashboard</a>
+    <a href="products.html">Products</a>
+    <a href="billing.html">Billing</a>
+    <a href="sales.html">Sales</a>
+    <a href="reports.html">Reports</a>
+    <a href="settings.html" class="active">Settings</a>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <div><strong>Settings</strong></div>
+    </div>
+    <div class="content">
+      <h1>System Settings</h1>
+      <div class="section">
+        <h3 style="color: blue;">Store Info</h3>
+        <label style="color: blue;">Store Name</label>
+        <input id="storeName" placeholder="My Shop">
+        <label style="color: blue;">Tax Rate (%)</label>
+        <input id="taxRate" type="number" step="0.01">
+        <button onclick="saveSettings()">Save</button>
+      </div>
+      <div class="section">
+        <h3 style="color: blue;">Data Backup</h3>
+        <button onclick="exportData()">Export Backup</button>
+        <input type="file" id="importFile">
+        <button onclick="importData()">Import Backup</button>
+      </div>
+      <div class="section">
+        <h3 style="color: blue;">Factory Reset</h3>
+        <button onclick="resetAll()">Reset All Data</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const KEYS=['pos_products','pos_sales','pos_seq','pos_settings'];
+  const DB={get:(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch{return f}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+
+  function loadSettings(){
+    const s=DB.get('pos_settings',{name:'My Shop',tax:5});
+    document.getElementById('storeName').value=s.name;
+    document.getElementById('taxRate').value=s.tax;
+  }
+
+  function saveSettings(){
+    const name=document.getElementById('storeName').value;
+    const tax=parseFloat(document.getElementById('taxRate').value)||0;
+    DB.set('pos_settings',{name,tax});
+    alert('Saved!');
+  }
+
+  function exportData(){
+    const data={};
+    for(const k of KEYS){data[k]=localStorage.getItem(k);}
+    const blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='pos-backup.json';
+    a.click();
+  }
+
+  function importData(){
+    const f=document.getElementById('importFile').files[0];
+    if(!f) return;
+    const r=new FileReader();
+    r.onload=e=>{
+      const data=JSON.parse(e.target.result);
+      for(const k of KEYS){if(data[k]) localStorage.setItem(k,data[k]);}
+      alert('Imported! Reloading...'); location.reload();
+    };
+    r.readAsText(f);
+  }
+
+  function resetAll(){
+    if(!confirm('Are you sure?')) return;
+    for(const k of KEYS) localStorage.removeItem(k);
+    alert('All data cleared'); location.reload();
+  }
+
+  loadSettings();
+</script>
+</body>
+</html>

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Simple POS — Store Management + Billing</title>
+  <style>
+    :root {
+      --bg: #0f172a; /* slate-900 */
+      --muted: #111827; /* gray-900 */
+      --card: #111827; /* gray-900 */
+      --text: #e5e7eb; /* gray-200 */
+      --text-dim: #9ca3af; /* gray-400 */
+      --accent: #22c55e; /* green-500 */
+      --accent-2: #3b82f6; /* blue-500 */
+      --danger: #ef4444; /* red-500 */
+      --warn: #f59e0b; /* amber-500 */
+      --ok: #10b981; /* emerald-500 */
+      --border: #1f2937; /* gray-800 */
+    }
+    * { box-sizing: border-box }
+    html, body { height: 100% }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji","Segoe UI Emoji"; background: radial-gradient(1200px 800px at 10% -10%, #111827 0,#0b1225 40%, #070d1d 70%, #050a16 100%), var(--bg); color: var(--text) }
+    .container { max-width: 1280px; margin: 0 auto; padding: 20px }
+    h1 { font-size: 28px; margin: 0 0 6px }
+    .sub { color: var(--text-dim); margin-bottom: 18px }
+    .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px }
+    .card { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border: 1px solid var(--border); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.25) }
+    .card h2 { margin: 0 0 12px; font-size: 18px }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+    input, select, button, textarea { background: #0b1020; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 14px; outline: none }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent-2) }
+    button { cursor: pointer; border: none }
+    .btn { background: linear-gradient(180deg, #2563eb, #1d4ed8); padding: 10px 14px; border-radius: 10px; color: #fff; font-weight: 600 }
+    .btn.green { background: linear-gradient(180deg, #22c55e, #16a34a) }
+    .btn.gray { background: #1f2937 }
+    .btn.red { background: linear-gradient(180deg, #ef4444, #dc2626) }
+    .btn.amber { background: linear-gradient(180deg, #f59e0b, #d97706) }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; background:#121a33; border:1px solid var(--border); color:var(--text-dim); font-size:12px }
+    table { width: 100%; border-collapse: collapse; font-size: 14px }
+    th, td { padding: 10px; border-bottom: 1px solid var(--border) }
+    th { text-align: left; color: var(--text-dim); font-weight: 600 }
+    .right { text-align: right }
+    .muted { color: var(--text-dim) }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; background: #0b1020; border: 1px solid var(--border); padding: 2px 6px; border-radius: 6px }
+    .footer { display:flex; gap:8px; justify-content: flex-end; margin-top: 10px }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+    .totals { background:#0b1020; border:1px solid var(--border); padding:10px; border-radius:12px }
+    .totals .row { justify-content: space-between }
+    .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border:1px solid var(--border); color: var(--text-dim) }
+    .danger { color: #fecaca }
+    .ok { color: #bbf7d0 }
+    .scroll { max-height: 290px; overflow:auto; border:1px solid var(--border); border-radius:12px }
+    .badge { background:#12203a; border:1px solid var(--border); padding: 2px 8px; border-radius:999px; font-size:12px }
+    .note { font-size: 12px; color: var(--text-dim) }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr }
+    }
+
+    /* Print receipt */
+    @media print {
+      body { background: white; color: black }
+      .no-print { display: none !important }
+      #receipt { display: block }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="row no-print" style="justify-content: space-between; align-items: baseline">
+      <div>
+        <h1>Simple POS</h1>
+        <div class="sub">Store management + barcode scan + billing + receipt + inventory</div>
+        <div class="row">
+          <span class="pill">Scan focus: <span id="scanFocus">active</span></span>
+          <span class="pill">Tax %: <span id="taxPill">0</span></span>
+          <span class="pill">Items: <span id="itemsCount">0</span></span>
+          <span class="pill">Stock Value: <span id="stockValue">0.00</span></span>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn gray" id="seedBtn" title="Load sample data">Seed demo data</button>
+        <button class="btn amber" id="exportBtn">Export Data</button>
+        <label class="btn gray" for="importFile" style="display:inline-flex; align-items:center; gap:8px">Import Data <input id="importFile" type="file" accept="application/json" style="display:none"></label>
+        <button class="btn red" id="resetBtn" title="Wipe local data">Factory Reset</button>
+      </div>
+    </div>
+
+    <div class="grid no-print">
+      <!-- LEFT: POS BILLING -->
+      <section class="card" aria-labelledby="pos-heading">
+        <h2 id="pos-heading">Billing / POS</h2>
+
+        <div class="row">
+          <input id="barcode" placeholder="Scan or type barcode" autofocus>
+          <input id="qty" type="number" min="1" value="1" style="max-width:100px">
+          <button id="addByScan" class="btn">Add by Barcode <span class="kbd">Enter</span></button>
+          <span class="note">Most USB barcode scanners act as keyboards and press Enter automatically.</span>
+        </div>
+
+        <div class="scroll" style="margin-top:12px">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:24px">#</th>
+                <th>Item</th>
+                <th>Barcode</th>
+                <th class="right">Price</th>
+                <th class="right">Qty</th>
+                <th class="right">Line Total</th>
+                <th class="right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="cartBody"></tbody>
+          </table>
+        </div>
+
+        <div class="split" style="margin-top:12px">
+          <div class="totals">
+            <div class="row"><span>Subtotal</span><strong id="subtotal">0.00</strong></div>
+            <div class="row"><span>Tax (<input id="tax" type="number" min="0" value="0" style="width:66px">%)</span><strong id="taxAmt">0.00</strong></div>
+            <div class="row"><span>Discount</span><input id="discount" type="number" min="0" value="0" style="width:90px"></div>
+            <hr style="border-color:var(--border)">
+            <div class="row"><span>Total</span><strong id="grand">0.00</strong></div>
+          </div>
+
+          <div class="totals">
+            <div class="row"><span>Customer pays</span><input id="cash" type="number" min="0" value="0" style="width:120px"></div>
+            <div class="row"><span>Change</span><strong id="change">0.00</strong></div>
+            <div class="row"><span>Payment Mode</span>
+              <select id="payMode">
+                <option>Cash</option>
+                <option>Card</option>
+                <option>UPI</option>
+                <option>Voucher</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <button class="btn amber" id="clearBill">Delete Full Bill</button>
+          <button class="btn red" id="voidCart">Void + Restock</button>
+          <button class="btn green" id="checkout">Checkout & Print</button>
+        </div>
+      </section>
+
+      <!-- RIGHT: PRODUCT & STOCK MGMT -->
+      <section class="card" aria-labelledby="inv-heading">
+        <h2 id="inv-heading">Products / Inventory</h2>
+        <div class="row">
+          <input id="pBarcode" placeholder="Barcode" />
+          <input id="pName" placeholder="Name" />
+          <input id="pPrice" type="number" min="0" step="0.01" placeholder="Price" style="max-width:120px" />
+          <input id="pStock" type="number" min="0" placeholder="Stock" style="max-width:100px" />
+          <button id="addProduct" class="btn">Add / Update</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <input id="search" placeholder="Search name or barcode" style="flex:1">
+          <span class="badge" id="prodMeta">0 products</span>
+        </div>
+        <div class="scroll" style="margin-top:10px">
+          <table>
+            <thead>
+              <tr>
+                <th>Barcode</th>
+                <th>Name</th>
+                <th class="right">Price</th>
+                <th class="right">Stock</th>
+                <th class="right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="prodBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- RECEIPT (hidden for print) -->
+    <section id="receipt" style="display:none; max-width:360px; margin:0 auto; color:#000">
+      <div style="text-align:center; padding:8px 0">
+        <h3 style="margin:0">Vithu Mart</h3>
+        <small>POS Receipt</small>
+      </div>
+      <div id="rMeta" style="font-size:12px; border-top:1px dashed #000; border-bottom:1px dashed #000; padding:6px 0"></div>
+      <table style="width:100%; font-size:12px; border-collapse: collapse; margin-top:6px">
+        <thead>
+          <tr><th style="text-align:left">Item</th><th class="right">Qty</th><th class="right">Price</th></tr>
+        </thead>
+        <tbody id="rBody"></tbody>
+      </table>
+      <div id="rTotals" style="border-top:1px dashed #000; margin-top:6px; padding-top:6px; font-size:12px"></div>
+      <div style="text-align:center; font-size:12px; margin-top:8px">Thank you! Visit again.</div>
+    </section>
+
+    <div class="no-print" style="margin-top:16px">
+      <details>
+        <summary class="muted">Tips: using a barcode scanner without extra libraries</summary>
+        <ul class="muted">
+          <li>Most USB barcode scanners work in "keyboard wedge" mode. They type the digits and press <span class="kbd">Enter</span>.</li>
+          <li>Keep focus in the barcode input. This UI auto-focuses it after actions.</li>
+          <li>If you later need camera scanning, integrate ZXing/Quagga and map the decoded value to <em>barcode</em> input.</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+
+  <script>
+    // --- Simple local storage layer ---
+    const DB = {
+      get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback } },
+      set(key, value) { localStorage.setItem(key, JSON.stringify(value)) },
+      del(key) { localStorage.removeItem(key) }
+    }
+
+    // Data keys
+    const K = { PRODS: 'pos_products', SALES: 'pos_sales', SEQ: 'pos_seq' }
+
+    // State
+    let cart = []
+
+    // Elements
+    const el = id => document.getElementById(id)
+    const barcode = el('barcode'), qty = el('qty'), cartBody = el('cartBody')
+    const subtotal = el('subtotal'), tax = el('tax'), taxAmt = el('taxAmt'), discount = el('discount'), grand = el('grand')
+    const cash = el('cash'), change = el('change'), payMode = el('payMode')
+    const itemsCount = el('itemsCount'), stockValue = el('stockValue'), taxPill = el('taxPill')
+    const seedBtn = el('seedBtn'), exportBtn = el('exportBtn'), importFile = el('importFile'), resetBtn = el('resetBtn')
+    const addByScan = el('addByScan'), clearBill = el('clearBill'), voidCart = el('voidCart'), checkout = el('checkout')
+
+    const pBarcode = el('pBarcode'), pName = el('pName'), pPrice = el('pPrice'), pStock = el('pStock'), addProduct = el('addProduct')
+    const search = el('search'), prodBody = el('prodBody'), prodMeta = el('prodMeta')
+
+    const rMeta = el('rMeta'), rBody = el('rBody'), rTotals = el('rTotals')
+
+    function focusScan() { barcode.focus(); el('scanFocus').textContent = document.activeElement === barcode ? 'active' : 'inactive' }
+    window.addEventListener('click', focusScan)
+
+    function products() { return DB.get(K.PRODS, []) }
+    function saveProducts(list) { DB.set(K.PRODS, list); renderProducts(); refreshStats() }
+
+    function findProduct(code) { return products().find(p => String(p.barcode) === String(code)) }
+
+    function upsertProduct(prod) {
+      const list = products()
+      const i = list.findIndex(p => String(p.barcode) === String(prod.barcode))
+      if (i >= 0) list[i] = { ...list[i], ...prod }
+      else list.push(prod)
+      saveProducts(list)
+    }
+
+    function deleteProduct(code) {
+      saveProducts(products().filter(p => String(p.barcode) !== String(code)))
+    }
+
+    function renderProducts() {
+      const q = (search.value || '').toLowerCase()
+      const list = products().filter(p => !q || p.name.toLowerCase().includes(q) || String(p.barcode).includes(q))
+      prodMeta.textContent = `${list.length} products`
+      prodBody.innerHTML = list.map(p => `<tr>
+        <td>${p.barcode}</td>
+        <td>${p.name}</td>
+        <td class="right">${money(p.price)}</td>
+        <td class="right">${p.stock}</td>
+        <td class="right">
+          <button class="btn gray" onclick='prefill(${JSON.stringify(p.barcode)})'>Edit</button>
+          <button class="btn red" onclick='delProd(${JSON.stringify(p.barcode)})'>Delete</button>
+        </td>
+      </tr>`).join('')
+    }
+
+    window.prefill = (code) => {
+      const p = findProduct(code)
+      if (!p) return
+      pBarcode.value = p.barcode; pName.value = p.name; pPrice.value = p.price; pStock.value = p.stock
+      focusScan()
+    }
+
+    window.delProd = (code) => {
+      if (!confirm('Delete product?')) return
+      deleteProduct(code)
+    }
+
+    // --- Cart handling ---
+    function addToCartByBarcode(code, q=1) {
+      const p = findProduct(code)
+      if (!p) { if (confirm('Product not found. Add it now?')) { pBarcode.value = code; pName.focus() } return }
+      if (p.stock <= 0) { alert('Out of stock'); return }
+      const i = cart.findIndex(x => x.barcode === p.barcode)
+      if (i >= 0) {
+        if (cart[i].qty + q > p.stock) { alert('Insufficient stock'); return }
+        cart[i].qty += q
+      } else {
+        cart.push({ barcode: p.barcode, name: p.name, price: p.price, qty: Math.min(q, p.stock) })
+      }
+      renderCart()
+      barcode.value = ''
+      qty.value = 1
+      focusScan()
+    }
+
+    function renderCart() {
+      cartBody.innerHTML = cart.map((li, idx) => {
+        const line = li.price * li.qty
+        return `<tr>
+          <td>${idx+1}</td>
+          <td>${li.name}</td>
+          <td>${li.barcode}</td>
+          <td class="right">${money(li.price)}</td>
+          <td class="right">
+            <input type="number" min="1" value="${li.qty}" style="width:70px" onchange='chgQty(${idx}, this.value)'>
+          </td>
+          <td class="right">${money(line)}</td>
+          <td class="right"><button class="btn gray" onclick='rmLine(${idx})'>Remove</button></td>
+        </tr>`
+      }).join('')
+      compute()
+    }
+
+    window.chgQty = (i, v) => {
+      v = parseInt(v||1)
+      const p = findProduct(cart[i].barcode)
+      if (v < 1) v = 1
+      if (p && v > p.stock) { alert('Insufficient stock'); v = p.stock }
+      cart[i].qty = v
+      renderCart()
+    }
+    window.rmLine = (i) => { cart.splice(i,1); renderCart() }
+
+    function compute() {
+      const sub = cart.reduce((s, li)=> s + li.price*li.qty, 0)
+      const tx = sub * (Number(tax.value||0)/100)
+      const disc = Number(discount.value||0)
+      const total = Math.max(0, sub + tx - disc)
+      const tender = Number(cash.value||0)
+      subtotal.textContent = money(sub)
+      taxAmt.textContent = money(tx)
+      grand.textContent = money(total)
+      change.textContent = money(Math.max(0, tender - total))
+      taxPill.textContent = Number(tax.value||0)
+    }
+
+    // --- Checkout & Receipt ---
+    function nextSeq() { const n = (DB.get(K.SEQ, 1000) || 1000) + 1; DB.set(K.SEQ, n); return n }
+
+    function finalizeSale() {
+      if (!cart.length) return alert('Cart is empty')
+      const sub = cart.reduce((s, li)=> s + li.price*li.qty, 0)
+      const tx = sub * (Number(tax.value||0)/100)
+      const total = Math.max(0, sub + tx - Number(discount.value||0))
+
+      // Reduce stock
+      const list = products().map(p => {
+        const line = cart.find(li => li.barcode === p.barcode)
+        return line ? { ...p, stock: p.stock - line.qty } : p
+      })
+      saveProducts(list)
+
+      const sale = {
+        id: `S-${new Date().toISOString().slice(0,10)}-${nextSeq()}`,
+        at: new Date().toLocaleString(),
+        items: cart.map(x=>({...x})),
+        tax: Number(tax.value||0),
+        discount: Number(discount.value||0),
+        subtotal: sub,
+        total,
+        pay: { mode: payMode.value, cash: Number(cash.value||0), change: Math.max(0, Number(cash.value||0)-total) }
+      }
+      const sales = DB.get(K.SALES, [])
+      sales.push(sale)
+      DB.set(K.SALES, sales)
+
+      // Prepare receipt
+      rMeta.innerHTML = `Invoice: <strong>${sale.id}</strong><br>Date: ${sale.at}<br>Mode: ${sale.pay.mode}`
+      rBody.innerHTML = sale.items.map(li => `<tr><td>${li.name}</td><td class="right">${li.qty}</td><td class="right">${money(li.price*li.qty)}</td></tr>`).join('')
+      rTotals.innerHTML = `
+        <div class="row" style="justify-content: space-between"><span>Subtotal</span><span>${money(sale.subtotal)}</span></div>
+        <div class="row" style="justify-content: space-between"><span>Tax (${sale.tax}%)</span><span>${money(sale.subtotal*(sale.tax/100))}</span></div>
+        <div class="row" style="justify-content: space-between"><span>Discount</span><span>${money(sale.discount)}</span></div>
+        <div class="row" style="justify-content: space-between; font-weight:700"><span>Total</span><span>${money(sale.total)}</span></div>
+        <div class="row" style="justify-content: space-between"><span>Paid</span><span>${money(sale.pay.cash)}</span></div>
+        <div class="row" style="justify-content: space-between"><span>Change</span><span>${money(sale.pay.change)}</span></div>
+      `
+
+      // Print
+      document.getElementById('receipt').style.display = 'block'
+      window.print()
+      document.getElementById('receipt').style.display = 'none'
+
+      // Reset cart
+      cart = []
+      renderCart()
+      cash.value = 0
+      focusScan()
+    }
+
+    // --- Utils ---
+    function money(n) { return (n||0).toFixed(2) }
+
+    function refreshStats() {
+      const list = products()
+      itemsCount.textContent = list.length
+      stockValue.textContent = money(list.reduce((s,p)=> s + p.price * p.stock, 0))
+    }
+
+    // --- Seed demo data ---
+    function seed() {
+      if (!confirm('Load sample products? This keeps your current data.')) return
+      const sample = [
+        { barcode: '4791234000012', name: 'Milk 1L', price: 380.00, stock: 50 },
+        { barcode: '4791234000029', name: 'Bread Loaf', price: 260.00, stock: 40 },
+        { barcode: '4791234000036', name: 'Eggs (6 pack)', price: 420.00, stock: 30 },
+        { barcode: '4791234000043', name: 'Rice 5kg', price: 1450.00, stock: 20 },
+        { barcode: '4791234000050', name: 'Sugar 1kg', price: 290.00, stock: 35 },
+        { barcode: '4791234000067', name: 'Tea 200g', price: 560.00, stock: 25 }
+      ]
+      const merged = mergeByBarcode(products(), sample)
+      saveProducts(merged)
+    }
+
+    function mergeByBarcode(curr, add) {
+      const m = new Map(curr.map(p=>[String(p.barcode), p]))
+      for (const p of add) m.set(String(p.barcode), { ...(m.get(String(p.barcode))||{}), ...p })
+      return Array.from(m.values())
+    }
+
+    // --- Export / Import ---
+    function exportData() {
+      const data = { products: products(), sales: DB.get(K.SALES, []), seq: DB.get(K.SEQ, 1000) }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `pos-backup-${new Date().toISOString().slice(0,10)}.json`
+      a.click()
+    }
+
+    function importData(file) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result)
+          if (Array.isArray(data.products)) DB.set(K.PRODS, data.products)
+          if (Array.isArray(data.sales)) DB.set(K.SALES, data.sales)
+          if (typeof data.seq === 'number') DB.set(K.SEQ, data.seq)
+          renderProducts(); refreshStats(); alert('Import successful')
+        } catch(e) { alert('Invalid file') }
+      }
+      reader.readAsText(file)
+    }
+
+    // --- Event wiring ---
+    addByScan.addEventListener('click', () => addToCartByBarcode(barcode.value.trim(), Number(qty.value||1)))
+    barcode.addEventListener('keydown', e => { if (e.key === 'Enter') addByScan.click() })
+
+    ;[tax, discount, cash].forEach(x => x.addEventListener('input', compute))
+    clearBill.addEventListener('click', () => { if (confirm('Clear current bill?')) { cart = []; renderCart(); focusScan() } })
+    voidCart.addEventListener('click', () => { if (confirm('Void bill and restock?')) { cart = []; renderCart(); focusScan() } })
+    checkout.addEventListener('click', finalizeSale)
+
+    addProduct.addEventListener('click', () => {
+      const prod = { barcode: pBarcode.value.trim(), name: pName.value.trim(), price: Number(pPrice.value||0), stock: Number(pStock.value||0) }
+      if (!prod.barcode || !prod.name) return alert('Barcode and Name are required')
+      if (prod.price < 0 || prod.stock < 0) return alert('Invalid price/stock')
+      upsertProduct(prod)
+      pBarcode.value = pName.value = pPrice.value = pStock.value = ''
+      focusScan()
+    })
+
+    search.addEventListener('input', renderProducts)
+    seedBtn.addEventListener('click', seed)
+    exportBtn.addEventListener('click', exportData)
+    importFile.addEventListener('change', e => e.target.files[0] && importData(e.target.files[0]))
+    resetBtn.addEventListener('click', () => { if (confirm('This will erase local products and sales. Continue?')) { DB.del(K.PRODS); DB.del(K.SALES); DB.del(K.SEQ); renderProducts(); refreshStats(); cart=[]; renderCart(); alert('Reset done') } })
+
+    // Init
+    renderProducts(); refreshStats(); renderCart(); focusScan()
+  </script>
+</body>
+</html>
